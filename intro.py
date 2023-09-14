@@ -1,17 +1,9 @@
-CELL_SIZE = 100
+from grid_settings import the_settings
+import random
+import time
 
-class Square:
-  def __init__(self, top_left_coor):
-    self.top_left_coor = top_left_coor
-    self.rect = Rect(top_left_coor,(CELL_SIZE,CELL_SIZE))
-    self.reward = -0.01
-    self.blocked = False
-    self.value = 0
-    self.terminating_state = False
-
-
-alien = Actor('alien')
-
+###SET CONSTANTS
+CELL_SIZE = 100 #so that cells are bigger than the alien
 
 WHITE = (255,255,255)
 BLACK = (0,0,0)
@@ -19,62 +11,89 @@ GRAY = (95, 95, 95)
 GREEN = (0,255,0)
 RED = (255,0,0)
 
+
+GRID_WIDTH = the_settings["grid_width"]
+GRID_HEIGHT = the_settings["grid_height"]
+WIDTH = (GRID_WIDTH+2)*CELL_SIZE + 300
+HEIGHT = (GRID_HEIGHT+2)*CELL_SIZE
+
+BLOCKED_SQUARES = the_settings["blocked_locations"]
+REWARD_LOCATIONS = the_settings["reward_locations"]
+
+START_LOC = the_settings["start_location"]
+START_X = (START_LOC[0]+1)*CELL_SIZE+50
+START_Y = (START_LOC[1]+1)*CELL_SIZE+50
+
+
+ALPHA = the_settings["alpha"]
+GAMMA = the_settings["gamma"]
+EPSILON = the_settings["epsilon"]
+
+AUTO_ENABLED = the_settings["auto"]
+ITERATIONS = the_settings["iterations"]
+
+MOVE_OPTIONS = [0, 1, 2, 3]
+
+#create a class of squares to hold info about each grid object
+class Square:
+  def __init__(self, left_coor, top_coor):
+    self.top_coor = top_coor #top left of where it is
+    self.left_coor = left_coor #left coor of where it is
+    self.rect = Rect((left_coor ,top_coor),(CELL_SIZE,CELL_SIZE)) #the rect of this square
+    self.reward = 0 #the reward gained by entering this square
+    self.blocked = False #if the square cannot be entered
+    self.value = 0 #the td value associated with this
+    self.terminating_state = False #if it starts a new game
+
+
+
+#initalize a bunch of squares based on the size of the grid
 the_squares = {}
 
-grid_width = 4 #int(float(input("enter the width of the grid: ")))
-grid_height = 3 #int(float(input("enter the heigh of the grid: ")))
+for x in range(GRID_WIDTH):
+    for y in range(GRID_HEIGHT):
+       the_squares[(x,y)] = Square((x+1)*CELL_SIZE, (y+1)*CELL_SIZE) 
 
-for x in range(grid_width):
-    for y in range(grid_height):
-       the_squares[(x,y)] = Square(((x+1)*CELL_SIZE ,(y+1)*CELL_SIZE)) 
 
-blocked_squares = "(1,1)"
-#input(
-#"""enter squares that are blocked in list form
-#    ex: in the 3x2 grid below if the x's were blocked
-#    [x|  |  ]
-#    [ |  | x]
-#    you would type: (0,0), (2,1)
-#""")
+for blocked_square in BLOCKED_SQUARES:
+   the_squares[blocked_square].blocked = True
 
-blocked_squares = blocked_squares.split(", ")
-for blocked_square in blocked_squares:
-   blocked_square = blocked_square[1:-1]
-   x,y = blocked_square.split(",")
-   the_squares[(int(float(x)),int(float(y)))].blocked = True
+for location, the_reward in REWARD_LOCATIONS.items():
+   the_squares[location].reward = the_reward
+   the_squares[location].terminating_state = True
 
-reward_squares = "(3,0):10, (3,1):-5"
-#input(
-#"""enter squares that have rewards/penalties in list form
-#    ex: in the 3x2 grid below if the numbers are reward/penalty values
-#    [100|  |   ]
-#    [   |  |-87]
-#    you would type: (0,0):100, (2,1):-87
-#""")
-reward_squares = reward_squares.split(", ")
-for reward_square in reward_squares:
-   location, the_reward = reward_square.split(":")
-   location = location[1:-1]
-   x,y = location.split(",")
-   the_squares[(int(float(x)),int(float(y)))].reward = int(float(the_reward))
-   the_squares[(int(float(x)),int(float(y)))].terminating_state = True
+#make a dictionary that holds all the next moves for each square
+#key is the square id value is the list of next ids where the order is left, right, up, down
+next_moves = {}
+for the_id, square in the_squares.items():
+    this_square_center = square.rect.center
+    new_left = (max(CELL_SIZE*1.5, this_square_center[0]-CELL_SIZE), this_square_center[1])
+    new_right = (min(CELL_SIZE*(GRID_WIDTH+1)-CELL_SIZE*0.5, this_square_center[0]+CELL_SIZE), this_square_center[1])
+    new_up = (this_square_center[0], max(CELL_SIZE*1.5, this_square_center[1]-CELL_SIZE))
+    new_down = (this_square_center[0], min(CELL_SIZE*(GRID_HEIGHT+1)-CELL_SIZE*0.5, this_square_center[1]+CELL_SIZE))
+    
+    options = [new_left, new_right, new_up, new_down]
+    next_squares = []
 
-start_loc = (0,2)
-start_x = (start_loc[0]+1)*CELL_SIZE+50
-start_y = (start_loc[1]+1)*CELL_SIZE+50
+    for option in options:
+        for the_option_id, the_option_square in the_squares.items():
+            if the_option_square.rect.collidepoint(option):
+                if the_option_square.blocked:
+                    next_squares.append(the_id)
+                    break
+                else:
+                    next_squares.append(the_option_id)
+                    break
+                
+    next_moves[the_id] = next_squares
 
-alien.center =  (start_x, start_y)
+#initialize the alien to move
+alien = Actor('alien')
+alien.center =  (START_X, START_Y)
 
-WIDTH = (grid_width+2)*CELL_SIZE + 300
-HEIGHT = (grid_height+2)*CELL_SIZE
 
+#use this so that the actions slow down and people can see whats going on
 actions_valid = True
-
-
-alpha = 0.1
-gamma = 1
-
-
 
 def draw():
     screen.clear()
@@ -92,11 +111,11 @@ def draw():
             screen.draw.rect(square.rect, BLACK)
         
         #label each square
-        screen.draw.text(f"Square ({the_id[0]},{the_id[1]})", square.top_left_coor, color="orange")
+        screen.draw.text(f"Square ({the_id[0]},{the_id[1]})", (square.left_coor, square.top_coor), color="orange")
 
         #write the values for each square on the side
         the_current_val = f"Square ({the_id[0]},{the_id[1]}): {square.value}"
-        screen.draw.text(the_current_val, ((grid_width+2)*CELL_SIZE, (grid_width*the_id[1] + the_id[0])*25 + CELL_SIZE), color="orange")
+        screen.draw.text(the_current_val, ((GRID_WIDTH+2)*CELL_SIZE, (GRID_WIDTH*the_id[1] + the_id[0])*25 + CELL_SIZE), color="orange")
     
     #draw the alien
     alien.draw()
@@ -105,65 +124,93 @@ def draw():
 
 def update():
     global actions_valid
-    if keyboard.left and actions_valid:
-        move(-CELL_SIZE, 0)
-    elif keyboard.right and actions_valid:
-        move(CELL_SIZE, 0)
-    elif keyboard.up and actions_valid:
-        move(0, -CELL_SIZE)
-    elif keyboard.down and actions_valid:
-        move(0, CELL_SIZE)
+    cur_square = get_current_square()
+    if AUTO_ENABLED:
+        for i in range(ITERATIONS): 
+            cur_square = get_current_square()
+            the_direction = get_new_direction(cur_square)
+            the_move = move2(cur_square, the_direction)
+            while the_move != True: 
+                cur_square = get_current_square()
+                the_direction = get_new_direction(cur_square)
+                the_move = move2(cur_square, the_direction)
+            reset_board()
+        
+        for i in range(GRID_HEIGHT):
+            row = ""
+            for j in range(GRID_WIDTH):
+                value = the_squares[(j,i)].value
+                if value > 0:
+                    row += f" {the_squares[(j,i)].value:2f} " 
+                else:
+                    row += f" {the_squares[(j,i)].value:2f} " 
+            print(row)
+        exit()
+
+    else:
+        if keyboard.left and actions_valid:
+            move2(cur_square, 0)
+        elif keyboard.right and actions_valid:
+            move2(cur_square, 1)
+        elif keyboard.up and actions_valid:
+            move2(cur_square, 2)
+        elif keyboard.down and actions_valid:
+            move2(cur_square, 3)
 
 
-
-def move(x_change, y_change):
+def move2(current_square_id, direction):
     global actions_valid
-    #get the old information about the alien x/y and the square it was in
-    old_x = alien.x
-    old_y = alien.y
+    #get the next square based on the direction
+    next_square_id = next_moves[current_square_id][direction]
 
-    old_square_id = None
-    for id, square in the_squares.items():
-        if alien.colliderect(square.rect):
-            old_square_id = id
-            break
+    #get both the current and new squares in square not id form
+    current_square = the_squares[current_square_id]
+    next_square = the_squares[next_square_id]
 
-    #move the position in accordance with the new movment
-    alien.x += x_change
-    alien.x = max(CELL_SIZE*1.5, alien.x)
-    alien.x = min(CELL_SIZE*(grid_width+1)-CELL_SIZE*0.5, alien.x)
+    #update the alien position
+    alien.center = next_square.rect.center
+
+    #update the old squares estimated value 
+    current_square.value = ((1-ALPHA) * current_square.value) + (ALPHA * (next_square.reward + (GAMMA * next_square.value)))    
     
-    alien.y += y_change
-    alien.y = max(CELL_SIZE*1.5, alien.y)
-    alien.y = min(CELL_SIZE*(grid_height+1)-CELL_SIZE*0.5, alien.y)
-
-    
-    #do the calculations based on the new square we ended up in and the old square
-    for square in the_squares.values():
-        if alien.colliderect(square.rect):
-            if square.blocked:
-                alien.x = old_x
-                alien.y = old_y
+    #if the new square was a terminating state reset the game
+    if next_square.terminating_state:
+        clock.schedule(reset_board, 0.5)
+        return True
                 
-                the_squares[old_square_id].value = ((1-alpha) * the_squares[old_square_id].value) + (alpha*(the_squares[old_square_id].reward + gamma*the_squares[old_square_id].value))
-                break
-            else:
-                the_squares[old_square_id].value = ((1-alpha) * the_squares[old_square_id].value) + (alpha*(square.reward +  gamma*square.value))
-                
-            
-            if square.terminating_state:
-                print("THIS IS THE END OF THE GAME")
-                clock.schedule(reset_board, 0.5)
-                break
-            
+    #otherwise pause actions for a second 
     actions_valid = False
     clock.schedule(reset_actions, 0.5)
 
+    return False
 
 def reset_board():
-    alien.center =  (start_x, start_y)
+    alien.center =  (START_X, START_Y)
 
 
 def reset_actions():
     global actions_valid
     actions_valid = True
+
+def get_new_direction(cur_square):
+    if random.random() > EPSILON:
+        the_move_direction = random.choice(MOVE_OPTIONS)
+    else:
+        #TODO: pick the best option
+        the_moves = next_moves[cur_square]
+        
+        most_value = -99999999999999
+        the_move_direction = None
+
+        for i, move in enumerate(the_moves):
+            the_val = the_squares[move].value
+            if the_val > most_value:
+                most_value = the_val
+                the_move_direction = i
+
+    return the_move_direction
+
+def get_current_square():
+    for id, square in the_squares.items():
+        if square.rect.collidepoint(alien.center):
+            return id
