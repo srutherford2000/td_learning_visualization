@@ -14,8 +14,11 @@ the_settings = {
         "slide_right": 0.1
     },
     "alpha": 0.1,
-    "gamma": 0.1,
-    "epsilon": 0.5,
+    "gamma": 0.9,
+    "epsilon": 0.7,
     "auto": True,
-    "iterations": 60
+    "iterations": 60,
+    "sleep_between_moves": 0.0,
+    "print_logs": True,
+    "default_direction": "R"
 }
